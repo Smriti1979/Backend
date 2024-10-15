@@ -1,82 +1,50 @@
-import {asyncHandler} from "../utils/asyncHandler.js";
-import {ApiError} from "../utils/ApiError.js";
-import {User} from "../models/user.model.js";
-import {uploadOnCloudinary} from "../utils/cloudinary.js";
-import {ApiResponse} from "../utils/ApiResponse.js";
+import { v2 as cloudinary } from 'cloudinary'; // Import cloudinary
+import fs from 'fs'; // For file system operations
 
-const registerUser = asyncHandler( async (req, res) => {
-    // get user details from frontend
-    // validation - not empty
-    // check if user already exists: username, email
-    // check for images, check for avatar
-    // upload them to cloudinary, avatar
-    // create user object - create entry in db
-    // remove password and refresh token field from response
-    // check for user creation
-    // return res
-    console.log("req.body: ", req.body);
+// Configure Cloudinary (if not already done in a separate config file)
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
-
-    const {fullName, email, username, password } = req.body
-    //console.log("email: ", email);
-
-    if (
-        [fullName, email, username, password].some((field) => field?.trim() === "")
-    ) {
-        throw new ApiError(400, "All fields are required")
+export const registerUser = async (req, res) => {
+  try {
+    // Check if the avatar file is uploaded
+    if (!req.files || !req.files.avatar) {
+      return res.status(400).json({ error: "Avatar file is required" });
     }
 
-    const existedUser = await User.findOne({
-        $or: [{ username }, { email }]
-    })
-
-    if (existedUser) {
-        throw new ApiError(409, "User with email or username already exists")
+    // Check if coverImages are uploaded (optional)
+    if (!req.files.coverImages) {
+      return res.status(400).json({ error: "Cover image is required" });
     }
 
-    console.log("req.files: ", req.files);
+    const avatarFile = req.files.avatar[0];
+    const coverImageFile = req.files.coverImages[0];
 
-    const avatarLocalPath = req.files?.avatar[0]?.path;
+    // Upload avatar to Cloudinary
+    const avatarUploadResult = await cloudinary.uploader.upload(avatarFile.path, {
+      folder: 'avatars',
+    });
 
-    let coverImageLocalPath;
-    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
-        coverImageLocalPath = req.files.coverImage[0].path
-    }
-    
+    // Upload cover image to Cloudinary
+    const coverImageUploadResult = await cloudinary.uploader.upload(coverImageFile.path, {
+      folder: 'coverImages',
+    });
 
-    if (!avatarLocalPath) {
-        throw new ApiError(400, "Avatar file is required")
-    }
+    // Remove local files after uploading to Cloudinary
+    fs.unlinkSync(avatarFile.path);
+    fs.unlinkSync(coverImageFile.path);
 
-    const avatar = await uploadOnCloudinary(avatarLocalPath)
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
-
-    if (!avatar) {
-        throw new ApiError(400, "Avatar file is required")
-    }
-   
-
-    const user = await User.create({
-        fullName,
-        avatar: avatar.url,
-        coverImage: coverImage?.url || "",
-        email, 
-        password,
-        username: username.toLowerCase()
-    })
-
-    const createdUser = await User.findById(user._id).select(
-        "-password -refreshToken"
-    )
-
-    if (!createdUser) {
-        throw new ApiError(500, "Something went wrong while registering the user")
-    }
-
-    return res.status(201).json(
-        new ApiResponse(200, createdUser, "User registered Successfully")
-    )
-
-} )
-
-export {registerUser};
+    // Return response with Cloudinary URLs
+    return res.status(201).json({
+      message: "User registered successfully",
+      avatarUrl: avatarUploadResult.secure_url,
+      coverImageUrl: coverImageUploadResult.secure_url,
+    });
+  } catch (error) {
+    console.error("Cloudinary upload error:", error);
+    return res.status(500).json({ message: "Internal Server Error", error: error.message });
+  }
+};
