@@ -1,9 +1,11 @@
 import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
+import EventEmitter from 'events';
 
-// Define the static path directly (update this to your actual path)
-const uploadPath = path.join('C:/Users/Rockm/OneDrive/Desktop/Backend/public/temp');
+EventEmitter.defaultMaxListeners = 20;
+// Define the static path directly (update this to your actual path")
+const uploadPath = path.join("./Public/temp");
 
 // Ensure the directory exists
 if (!fs.existsSync(uploadPath)) {
